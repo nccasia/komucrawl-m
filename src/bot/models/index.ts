@@ -12,6 +12,7 @@ export { WorkFromHome } from './wfh.entity';
 export { CompanyTrip } from './companyTrip.entity';
 export { Opentalk } from './opentalk.entity';
 export { Uploadfile } from './uploadFile.entity';
+export { Ncc8 } from './ncc8.entity';
 export { CheckList } from './checklist.entity';
 export { Subcategorys } from './subcategoryData.entity';
 export { BirthDay } from './birthday.entity';

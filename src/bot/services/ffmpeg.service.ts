@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
-import ffprobePath from 'ffprobe-static';
 import * as path from 'path';
 import * as fs from 'fs';
 import { FFmpegImagePath, FileType } from 'src/bot/constants/configs';
@@ -14,7 +13,7 @@ export class FFmpegService {
   constructor() {
     // ffmpeg.setFfmpegPath(ffmpegPath);
     ffmpeg.setFfmpegPath('/usr/bin/ffmpeg');
-    ffmpeg.setFfprobePath(ffprobePath.path);
+    ffmpeg.setFfprobePath(process.env.FFPROBE_PATH || '/usr/bin/ffprobe');
   }
 
   killCurrentStream(type: FileType) {

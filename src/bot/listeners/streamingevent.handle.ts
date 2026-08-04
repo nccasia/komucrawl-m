@@ -52,7 +52,6 @@ export class StreamingEvent extends BaseHandleEvent {
 
   @OnEvent(Events.StreamingJoinedEvent)
   async handleJoinNCC8(data: StreamingJoinedEvent) {
-    console.log('data joined', data);
     if (
       data.user_id === process.env.BOT_KOMU_ID ||
       data.streaming_channel_id !== process.env.MEZON_NCC8_CHANNEL_ID
@@ -118,7 +117,6 @@ export class StreamingEvent extends BaseHandleEvent {
 
   @OnEvent(Events.StreamingLeavedEvent)
   async handleLeaveNCC8(data: StreamingLeavedEvent) {
-    console.log('handleLeaveNCC8', data);
     if (
       data.streaming_user_id === process.env.BOT_KOMU_ID ||
       data.streaming_channel_id !== process.env.MEZON_NCC8_CHANNEL_ID

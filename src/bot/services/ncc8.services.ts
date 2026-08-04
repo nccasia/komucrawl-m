@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import ffmpeg from 'fluent-ffmpeg';
-import ffprobePath from 'ffprobe-static';
 import ffmpegPath from 'ffmpeg-static';
 import * as fs from 'fs';
 import WebSocket from 'ws';
@@ -13,7 +12,7 @@ export class NCC8Service {
 
   constructor(private clientService: MezonClientService) {
     ffmpeg.setFfmpegPath(ffmpegPath);
-    ffmpeg.setFfprobePath(ffprobePath.path);
+    ffmpeg.setFfprobePath(process.env.FFPROBE_PATH || '/usr/bin/ffprobe');
   }
 
   getSocket() {
@@ -48,6 +47,14 @@ export class NCC8Service {
     } else {
       console.debug('ws: send not ready, skipping...', json);
     }
+  }
+
+  stopNcc8() {
+    this.connectSocket();
+    this.ws.on('open', () => {
+      this.wsSend('', { Key: 'stop_publisher' });
+    });
+    
   }
 
   playNcc8(filePath: string) {

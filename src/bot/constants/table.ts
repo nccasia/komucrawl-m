@@ -1,4 +1,5 @@
 export const TABLE = {
+  NCC8: 'komu_ncc8',
   NEWS: 'komu_news',
   DAILY: 'komu_daily',
   WORKOUT: 'komu_workout',

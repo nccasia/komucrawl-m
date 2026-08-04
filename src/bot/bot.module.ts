@@ -183,6 +183,7 @@ import { VoiceUsersCacheService } from './services/voiceUserCache.services';
 import { VoiceSessionTrackingService } from './services/voiceSessionTracking.services';
 import { VoiceRoomAllocatorService } from './services/voiceRoomAllocator.services';
 import { Ncc8ScheduleConfigService } from './services/ncc8ScheduleConfig.service';
+import { Ncc8 } from './models/ncc8.entity';
 
 // import { CronjobSlashCommand } from "./slash-commands/cronjob.slashcommand";
 
@@ -261,6 +262,7 @@ import { Ncc8ScheduleConfigService } from './services/ncc8ScheduleConfig.service
       VoiceSession,
       TokenTransfer,
       VoucherWithDrawEntiTy,
+      Ncc8,
     ]),
     HttpModule,
     ScheduleModule.forRoot(),
