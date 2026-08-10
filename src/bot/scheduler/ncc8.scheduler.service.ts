@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { FFmpegService } from '../services/ffmpeg.service';
 import { getRandomColor, getUserNameByEmail, sleep } from '../utils/helper';
-import { Uploadfile, User } from '../models';
+import { Ncc8, Uploadfile, User } from '../models';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
@@ -31,6 +31,8 @@ export class Ncc8SchedulerService {
     private ffmpegService: FFmpegService,
     @InjectRepository(Uploadfile)
     private uploadFileData: Repository<Uploadfile>,
+    @InjectRepository(Ncc8)
+    private ncc8Data: Repository<Ncc8>,
     private clientService: MezonClientService,
     private clientConfigService: ClientConfigService,
     private axiosClientService: AxiosClientService,
@@ -108,17 +110,24 @@ export class Ncc8SchedulerService {
 
   @Cron('30 11 * * 1,3,5', { timeZone: 'Asia/Ho_Chi_Minh' })
   async ncc8Scheduler() {
-    console.log('ncc8Scheduler');
+    const latestNcc8 = await this.ncc8Data.findOne({
+      where: { isActive: true },
+      order: { ncc8Id: 'DESC', id: 'DESC' },
+    });
+
+    if (!latestNcc8?.url) {
+      console.log('No active NCC8 found');
+      return;
+    }
+
     if (this.ncc8Service.getSocket()) {
-      this.ncc8Service.wsSend('', { Key: 'stop_publisher' });
+      this.ncc8Service.stopNcc8();
     }
     await sleep(1000);
-    this.ncc8Service.playNcc8(
-      'https://cdn.mezon.ai/0/1840659984552038400/1827994776956309500/1746701451462_0ncc8.ogg',
-    );
+    this.ncc8Service.playNcc8(latestNcc8.url);
   }
 
-  @Cron('5 12 * * 5', { timeZone: 'Asia/Ho_Chi_Minh' })
+  // @Cron('5 12 * * 5', { timeZone: 'Asia/Ho_Chi_Minh' })
   async ncc8SummaryScheduler() {
     const currentNcc8 = await this.findCurrentNcc8Episode(FileType.NCC8);
     const currentNcc8FileName = currentNcc8?.fileName;

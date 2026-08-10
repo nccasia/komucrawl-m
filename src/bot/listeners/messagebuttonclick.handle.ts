@@ -589,7 +589,7 @@ export class MessageButtonClickedEvent extends BaseHandleEvent {
           const yesterdayValue = parsedExtraData[yesterdayKey];
           const todayValue = parsedExtraData[todayKey];
           const blockValue = parsedExtraData[blockKey];
-          const workingTimeValue = parsedExtraData[workingTimeKey];
+          const workingTimeValue = parsedExtraData[workingTimeKey] || 8;
           const typeOfWorkValue = parsedExtraData[typeOfWorkKey];
           const taskValue = parsedExtraData[taskKey];
 
