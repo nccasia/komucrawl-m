@@ -184,6 +184,7 @@ import { VoiceSessionTrackingService } from './services/voiceSessionTracking.ser
 import { VoiceRoomAllocatorService } from './services/voiceRoomAllocator.services';
 import { Ncc8ScheduleConfigService } from './services/ncc8ScheduleConfig.service';
 import { Ncc8 } from './models/ncc8.entity';
+import { AIUserAccessCacheService } from './services/aiUserAccessCache.service';
 
 // import { CronjobSlashCommand } from "./slash-commands/cronjob.slashcommand";
 
@@ -295,6 +296,7 @@ import { Ncc8 } from './models/ncc8.entity';
     MentionSchedulerService,
     ToggleActiveCommand,
     ToggleActiveService,
+    AIUserAccessCacheService,
     Ncc8Command,
     AudiobookCommand,
     MusicCommand,

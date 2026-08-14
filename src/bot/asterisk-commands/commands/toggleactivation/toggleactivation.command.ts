@@ -5,6 +5,7 @@ import { ToggleActiveService } from './toggleactivation.serivces';
 import { User } from 'src/bot/models/user.entity';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+import { AIUserAccessCacheService } from 'src/bot/services/aiUserAccessCache.service';
 
 @Command('toggleactive')
 export class ToggleActiveCommand extends CommandMessage {
@@ -12,6 +13,7 @@ export class ToggleActiveCommand extends CommandMessage {
     @InjectRepository(User)
     private userData: Repository<User>,
     private toggleActiveService: ToggleActiveService,
+    private aiUserAccessCacheService: AIUserAccessCacheService,
   ) {
     super();
   }
@@ -86,12 +88,20 @@ export class ToggleActiveCommand extends CommandMessage {
         }
         if (!findUserId.deactive) {
           await this.toggleActiveService.deactiveAcc(findUserId.userId);
+          this.aiUserAccessCacheService.setRestrictionStatus(
+            findUserId.userId,
+            true,
+          );
           return this.replyMessageGenerate(
             { messageContent: '✅Disable account successfully!' },
             message,
           );
         } else {
           await this.toggleActiveService.ActiveAcc(findUserId.userId);
+          this.aiUserAccessCacheService.setRestrictionStatus(
+            findUserId.userId,
+            Boolean(findUserId.bot),
+          );
           return this.replyMessageGenerate(
             { messageContent: '✅Enable account successfully!' },
             message,

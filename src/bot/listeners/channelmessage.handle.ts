@@ -36,6 +36,7 @@ import { UtilsService } from '../services/utils.services';
 import { invalidCharacter } from '../constants/text';
 import { PollTrackerService } from '../services/PollTracker.services';
 import { VoiceRoomAllocatorService } from '../services/voiceRoomAllocator.services';
+import { AIUserAccessCacheService } from '../services/aiUserAccessCache.service';
 
 const COMMAND_PERMISSION_BYPASS_USER_IDS = [
   '1827994776956309504',
@@ -45,10 +46,16 @@ const COMMAND_PERMISSION_BYPASS_USER_IDS = [
 const MEKNOW_URL =
   process.env.MEKNOW_URL ??
   'https://meknow.mezon.vn/forward/mezon/v1/messages';
+const NCC8_UPLOAD_CACHE_TTL_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class EventListenerChannelMessage {
   private client: MezonClient;
+  private readonly pendingNcc8Uploads = new Map<
+    string,
+    { message: ChannelMessage; cleanupTimer: NodeJS.Timeout }
+  >();
+
   constructor(
     private clientService: MezonClientService,
     private asteriskCommand: Asterisk,
@@ -70,6 +77,7 @@ export class EventListenerChannelMessage {
     private utilsService: UtilsService,
     private pollTrackerService: PollTrackerService,
     private voiceRoomAllocator: VoiceRoomAllocatorService,
+    private aiUserAccessCacheService: AIUserAccessCacheService,
   ) {
     this.client = this.clientService.getClient();
   }
@@ -329,9 +337,111 @@ export class EventListenerChannelMessage {
     }
   }
 
+  private prepareNcc8UploadMessage(msg: ChannelMessage): {
+    message: ChannelMessage;
+    shouldExecute: boolean;
+    bypassEditGuard: boolean;
+  } {
+    const messageContent = msg.content as
+      | (typeof msg.content & { presign_finish?: unknown })
+      | undefined;
+    const presignFinish = messageContent?.presign_finish;
+    const isNcc8AddMessage =
+      typeof msg.content?.t === 'string' &&
+      /^\s*\*ncc8\s+add(?:\s|$)/i.test(msg.content.t);
+
+    if (!isNcc8AddMessage) {
+      return {
+        message: msg,
+        shouldExecute: true,
+        bypassEditGuard: false,
+      };
+    }
+
+    const uploadCacheKey = `${msg.clan_id}:${msg.channel_id}:${msg.message_id}`;
+
+    if (
+      msg.code === 0 &&
+      isNcc8AddMessage &&
+      Array.isArray(presignFinish) &&
+      presignFinish.length === 0 &&
+      msg.attachments?.length
+    ) {
+      const existingUpload = this.pendingNcc8Uploads.get(uploadCacheKey);
+      if (existingUpload) clearTimeout(existingUpload.cleanupTimer);
+
+      const cleanupTimer = setTimeout(() => {
+        const pendingUpload = this.pendingNcc8Uploads.get(uploadCacheKey);
+        if (pendingUpload?.message === msg) {
+          this.pendingNcc8Uploads.delete(uploadCacheKey);
+        }
+      }, NCC8_UPLOAD_CACHE_TTL_MS);
+      cleanupTimer.unref();
+
+      this.pendingNcc8Uploads.set(uploadCacheKey, {
+        message: msg,
+        cleanupTimer,
+      });
+      return {
+        message: msg,
+        shouldExecute: false,
+        bypassEditGuard: false,
+      };
+    }
+
+    const isNcc8PresignFinishMessage =
+      msg.code === 1 &&
+      isNcc8AddMessage &&
+      Array.isArray(presignFinish) &&
+      presignFinish.length > 0;
+
+    if (isNcc8PresignFinishMessage) {
+      const pendingUpload = this.pendingNcc8Uploads.get(uploadCacheKey);
+      if (!pendingUpload || pendingUpload.message.sender_id !== msg.sender_id) {
+        return {
+          message: msg,
+          shouldExecute: false,
+          bypassEditGuard: false,
+        };
+      }
+
+      clearTimeout(pendingUpload.cleanupTimer);
+      this.pendingNcc8Uploads.delete(uploadCacheKey);
+      return {
+        message: {
+          ...pendingUpload.message,
+          ...msg,
+          content: {
+            ...pendingUpload.message.content,
+            ...msg.content,
+          },
+          attachments: pendingUpload.message.attachments,
+        },
+        shouldExecute: true,
+        bypassEditGuard: true,
+      };
+    }
+
+    return {
+      message: msg,
+      shouldExecute: true,
+      bypassEditGuard: false,
+    };
+  }
+
   @OnEvent(Events.ChannelMessage)
   async handleCommand(msg: ChannelMessage) {
-    if (msg.code || !msg.hide_editted || !msg.clan_id) return; // Do not support case edit message
+    if (!msg.clan_id) return;
+
+    const ncc8UploadMessage = this.prepareNcc8UploadMessage(msg);
+    if (!ncc8UploadMessage.shouldExecute) return;
+
+    msg = ncc8UploadMessage.message;
+    if (
+      !ncc8UploadMessage.bypassEditGuard &&
+      (msg.code || !msg.hide_editted)
+    )
+      return; // Do not support case edit message, except NCC8 presign completion
     try {
       const content = msg.content.t;
       let replyMessage: ReplyMezonMessage;
@@ -406,11 +516,34 @@ export class EventListenerChannelMessage {
     }
   }
 
+  private async shouldIgnoreAIUser(userId: string) {
+    const cachedRestrictionStatus =
+      this.aiUserAccessCacheService.getRestrictionStatus(userId);
+    if (cachedRestrictionStatus !== undefined) {
+      return cachedRestrictionStatus;
+    }
+
+    const user = await this.userRepository.findOne({
+      select: {
+        userId: true,
+        bot: true,
+        deactive: true,
+      },
+      where: { userId },
+    });
+
+    const isRestricted = Boolean(user?.bot || user?.deactive);
+    this.aiUserAccessCacheService.setRestrictionStatus(userId, isRestricted);
+
+    return isRestricted;
+  }
+
   @OnEvent(Events.ChannelMessage)
   async handleAIforbot(msg: ChannelMessage) {
     if (
       msg.channel_id === this.clientConfigService.machleoChannelId ||
-      msg.code
+      msg.code ||
+      msg.sender_id === BOT_ID
     )
       return;
     try {
@@ -424,11 +557,11 @@ export class EventListenerChannelMessage {
       if (
         !text ||
         text.startsWith('*') ||
-        msg.sender_id === BOT_ID ||
         (!isMentionBot && !isReplyBot)
       ) {
         return;
       }
+      if (await this.shouldIgnoreAIUser(msg.sender_id)) return;
 
       const textWithoutMentions = [...mentions]
         .sort((a, b) => b.s - a.s)
