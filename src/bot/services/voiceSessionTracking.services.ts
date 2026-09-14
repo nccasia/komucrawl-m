@@ -137,28 +137,49 @@ export class VoiceSessionTrackingService {
           SELECT
             ($1::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh') AS t1,
             ($2::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh') AS t2
+        ),
+        sessions AS (
+          SELECT
+            s.user_id,
+            GREATEST(
+              s.joined_at,
+              b.t1,
+              COALESCE(
+                to_timestamp(e."timeStart"::double precision / 1000)
+                  AT TIME ZONE 'Asia/Ho_Chi_Minh',
+                b.t1
+              )
+            ) AS effective_start,
+            LEAST(
+              COALESCE(
+                s.left_at,
+                CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh'
+              ),
+              b.t2,
+              COALESCE(
+                to_timestamp(e."timeEnd"::double precision / 1000)
+                  AT TIME ZONE 'Asia/Ho_Chi_Minh',
+                b.t2
+              )
+            ) AS effective_end
+          FROM "komu_voiceSession" s
+          CROSS JOIN bounds b
+          LEFT JOIN "komu_eventMezon" e ON e.id = s.event_id
+          WHERE
+            s.joined_at < b.t2
+            AND (s.left_at IS NULL OR s.left_at > b.t1)
+            AND s.is_in_event = true
         )
         SELECT
-          s.user_id,
+          user_id,
           SUM(
             GREATEST(
               0,
-              EXTRACT(
-                EPOCH FROM (
-                  LEAST(COALESCE(s.left_at, b.t2), b.t2)
-                  -
-                  GREATEST(s.joined_at, b.t1)
-                )
-              )
+              EXTRACT(EPOCH FROM (effective_end - effective_start))
             )
           ) * 1000 AS total_ms
-        FROM "komu_voiceSession" s
-        CROSS JOIN bounds b
-        WHERE
-          s.joined_at < b.t2
-          AND (s.left_at IS NULL OR s.left_at > b.t1)
-          AND s.is_in_event = true
-        GROUP BY s.user_id
+        FROM sessions
+        GROUP BY user_id
         `,
       [dayStart, dayEnd],
     );
@@ -238,6 +259,28 @@ export class VoiceSessionTrackingService {
   async reconcileOpenSessionsByPresence() {
     const now = new Date();
     const nowMs = now.getTime();
+
+    // A leave event can be missed when the bot restarts or loses connection.
+    // Close those stale sessions at the event boundary before checking presence;
+    // otherwise they remain open forever once the event is no longer active.
+    await this.voiceSessionRepo.query(
+      `
+        UPDATE "komu_voiceSession" s
+        SET left_at = GREATEST(
+          s.joined_at,
+          to_timestamp(e."timeEnd"::double precision / 1000)
+            AT TIME ZONE 'Asia/Ho_Chi_Minh'
+        )
+        FROM "komu_eventMezon" e
+        WHERE
+          e.id = s.event_id
+          AND s.left_at IS NULL
+          AND s.is_in_event = true
+          AND e."timeEnd" IS NOT NULL
+          AND e."timeEnd"::double precision < $1
+      `,
+      [nowMs],
+    );
 
     const openSessions = await this.voiceSessionRepo
       .createQueryBuilder('s')
